@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"strconv"
 )
@@ -285,7 +286,7 @@ func searchKeys(data []byte, keys ...string) int {
 			if !lastMatched {
 				end := blockEnd(data[i:], '{', '}')
 				i += end - 1
-			} else{
+			} else {
 				level++
 			}
 		case '}':
@@ -304,18 +305,21 @@ func searchKeys(data []byte, keys ...string) int {
 				var valueFound []byte
 				var valueOffset int
 				var curI = i
-				ArrayEach(data[i:], func(value []byte, dataType ValueType, offset int, err error) {
+				ArrayEach(data[i:], func(value []byte, dataType ValueType) (int, error) {
 					if curIdx == aIdx {
 						valueFound = value
-						valueOffset = offset
+						valueOffset = FindEndOffset(value)
+						log.Println("in slice", string(value), string(data[i:]), valueOffset)
+						//valueOffset = offset
 						if dataType == String {
 							valueOffset = valueOffset - 2
 							valueFound = data[curI+valueOffset : curI+valueOffset+len(value)+2]
 						}
 					}
 					curIdx += 1
+					return 0, nil
 				})
-
+				log.Println("after array each", string(data[i+valueOffset:]))
 				if valueFound == nil {
 					return -1
 				} else {
@@ -496,7 +500,7 @@ func EachKey(data []byte, cb func(int, []byte, ValueType, error), paths ...[]str
 				level++
 
 				var curIdx int
-				arrOff, _ := ArrayEach(data[i:], func(value []byte, dataType ValueType, offset int, err error) {
+				arrOff, _ := ArrayEach(data[i:], func(value []byte, dataType ValueType) (int, error) {
 					if arrIdxFlags&bitwiseFlags[curIdx+1] != 0 {
 						for pi, p := range paths {
 							if pIdxFlags&bitwiseFlags[pi+1] != 0 {
@@ -518,6 +522,7 @@ func EachKey(data []byte, cb func(int, []byte, ValueType, error), paths ...[]str
 					}
 
 					curIdx += 1
+					return 0, nil
 				})
 
 				if pathsMatched == len(paths) {
@@ -871,6 +876,47 @@ func Get(data []byte, keys ...string) (value []byte, dataType ValueType, offset 
 	return a, b, d, e
 }
 
+func NextToken(data []byte) (offset int, dataType ValueType, err error) {
+	// Go to closest value
+	nO := nextToken(data[offset:])
+	if nO == -1 {
+		return -1, NotExist, MalformedJsonError
+	}
+	switch data[offset] {
+	case '"':
+		return offset, String, nil
+	case '[':
+		return offset, Array, nil
+	case '{':
+		return offset, Object, nil
+	case 't', 'f':
+		return offset, Boolean, nil
+	case 'u', 'n':
+		return offset, Null, nil
+	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-':
+		return offset, Number, nil
+	default:
+		return -1, NotExist, MalformedJsonError
+	}
+}
+
+func FindEndOffset(data []byte) int {
+	switch data[0] {
+	case '"':
+		if idx, _ := stringEnd(data[1:]); idx != -1 {
+			return idx + 1
+		} else {
+			return -1
+		}
+	case '[':
+		return blockEnd(data, '[', ']')
+	case '{':
+		return blockEnd(data, '{', '}')
+	default:
+		return tokenEnd(data)
+	}
+}
+
 func internalGet(data []byte, keys ...string) (value []byte, dataType ValueType, offset, endOffset int, err error) {
 	if len(keys) > 0 {
 		if offset = searchKeys(data, keys...); offset == -1 {
@@ -894,12 +940,11 @@ func internalGet(data []byte, keys ...string) (value []byte, dataType ValueType,
 	if dataType == String {
 		value = value[1 : len(value)-1]
 	}
-
 	return value, dataType, offset, endOffset, nil
 }
 
 // ArrayEach is used when iterating arrays, accepts a callback function with the same return arguments as `Get`.
-func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int, err error), keys ...string) (offset int, err error) {
+func ArrayEach(data []byte, cb func(value []byte, dataType ValueType) (offset int, err error), keys ...string) (offset int, err error) {
 	if len(data) == 0 {
 		return -1, MalformedObjectError
 	}
@@ -949,7 +994,7 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int
 		}
 
 		if t != NotExist {
-			cb(v, t, offset+o-len(v), e)
+			cb(v, t)
 		}
 
 		if e != nil {
@@ -979,7 +1024,7 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int
 }
 
 // ObjectEach iterates over the key-value pairs of a JSON object, invoking a given callback for each such entry
-func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType ValueType, offset int) error, keys ...string) (err error) {
+func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType ValueType) (int, error), keys ...string) (err error) {
 	var stackbuf [unescapeStackBufSize]byte // stack-allocated array for allocation-free unescaping of small strings
 	offset := 0
 
@@ -1051,12 +1096,12 @@ func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType Va
 		}
 
 		// Step 3: find the associated value, then invoke the callback
-		if value, valueType, off, err := Get(data[offset:]); err != nil {
+		if valueBeginOffset, valueType, err := NextToken(data[offset:]); err != nil {
 			return err
-		} else if err := callback(key, value, valueType, offset+off); err != nil { // Invoke the callback here!
+		} else if valueEndOffset, err := callback(key, data[offset+valueBeginOffset:], valueType); err != nil { // Invoke the callback here!
 			return err
 		} else {
-			offset += off
+			offset += valueEndOffset
 		}
 
 		// Step 4: skip over the next comma to the following token, or stop if we hit the ending brace
