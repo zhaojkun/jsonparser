@@ -12,7 +12,7 @@ import (
 var activeTest = ""
 
 func toArray(data []byte) (result [][]byte) {
-	ArrayEach(data, func(value []byte, dataType ValueType) (int, error) {
+	ArrayEach(data, func(value []byte, dataType ValueType, offset int, err error) (int, error) {
 		result = append(result, value)
 		return 0, nil
 	})
@@ -21,7 +21,7 @@ func toArray(data []byte) (result [][]byte) {
 }
 
 func toStringArray(data []byte) (result []string) {
-	ArrayEach(data, func(value []byte, dataType ValueType) (int, error) {
+	ArrayEach(data, func(value []byte, dataType ValueType, offset int, err error) (int, error) {
 		result = append(result, string(value))
 		return 0, nil
 	})
@@ -1105,7 +1105,7 @@ func runDeleteTests(t *testing.T, testKind string, tests []DeleteTest, runner fu
 }
 
 func TestSet(t *testing.T) {
-	runSetTests(t, "Set()", setTests[:1],
+	runSetTests(t, "Set()", setTests,
 		func(test SetTest) (value interface{}, dataType ValueType, err error) {
 			value, err = Set([]byte(test.json), []byte(test.setData), test.path...)
 			return
@@ -1211,7 +1211,7 @@ func TestArrayEach(t *testing.T) {
 	mock := []byte(`{"a": { "b":[{"x": 1} ,{"x":2},{ "x":3}, {"x":4} ]}}`)
 	count := 0
 
-	ArrayEach(mock, func(value []byte, dataType ValueType) (int, error) {
+	ArrayEach(mock, func(value []byte, dataType ValueType, offset int, err error) (int, error) {
 		count++
 
 		switch count {
@@ -1239,14 +1239,14 @@ func TestArrayEach(t *testing.T) {
 }
 
 func TestArrayEachEmpty(t *testing.T) {
-	funcError := func([]byte, ValueType) (int, error) {
+	funcError := func([]byte, ValueType, int, error) (int, error) {
 		t.Errorf("Run func not allow")
 		return 0, nil
 	}
 
 	type args struct {
 		data []byte
-		cb   func(value []byte, dataType ValueType) (int, error)
+		cb   func(value []byte, dataType ValueType, offset int, err error) (int, error)
 		keys []string
 	}
 	tests := []struct {

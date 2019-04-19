@@ -305,12 +305,10 @@ func searchKeys(data []byte, keys ...string) int {
 				var valueFound []byte
 				var valueOffset int
 				var curI = i
-				ArrayEach(data[i:], func(value []byte, dataType ValueType) (int, error) {
+				ArrayEach(data[i:], func(value []byte, dataType ValueType, offset int, err error) (int, error) {
 					if curIdx == aIdx {
 						valueFound = value
-						valueOffset = FindEndOffset(value)
-						log.Println("in slice", string(value), string(data[i:]), valueOffset)
-						//valueOffset = offset
+						valueOffset = offset
 						if dataType == String {
 							valueOffset = valueOffset - 2
 							valueFound = data[curI+valueOffset : curI+valueOffset+len(value)+2]
@@ -500,7 +498,7 @@ func EachKey(data []byte, cb func(int, []byte, ValueType, error), paths ...[]str
 				level++
 
 				var curIdx int
-				arrOff, _ := ArrayEach(data[i:], func(value []byte, dataType ValueType) (int, error) {
+				arrOff, _ := ArrayEach(data[i:], func(value []byte, dataType ValueType, offset int, err error) (int, error) {
 					if arrIdxFlags&bitwiseFlags[curIdx+1] != 0 {
 						for pi, p := range paths {
 							if pIdxFlags&bitwiseFlags[pi+1] != 0 {
@@ -944,7 +942,7 @@ func internalGet(data []byte, keys ...string) (value []byte, dataType ValueType,
 }
 
 // ArrayEach is used when iterating arrays, accepts a callback function with the same return arguments as `Get`.
-func ArrayEach(data []byte, cb func(value []byte, dataType ValueType) (offset int, err error), keys ...string) (offset int, err error) {
+func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int, err error) (int, error), keys ...string) (offset int, err error) {
 	if len(data) == 0 {
 		return -1, MalformedObjectError
 	}
@@ -994,7 +992,7 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType) (offset in
 		}
 
 		if t != NotExist {
-			cb(v, t)
+			cb(v, t, offset+o-len(v), e)
 		}
 
 		if e != nil {
