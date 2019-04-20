@@ -1056,7 +1056,7 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int
 }
 
 // ObjectEach iterates over the key-value pairs of a JSON object, invoking a given callback for each such entry
-func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType ValueType) (int, error), keys ...string) (offset int, err error) {
+func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType ValueType, valueOffset int) (int, error), keys ...string) (offset int, err error) {
 	var stackbuf [unescapeStackBufSize]byte // stack-allocated array for allocation-free unescaping of small strings
 
 	// Descend to the desired key, if requested
@@ -1128,7 +1128,7 @@ func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType Va
 		// Step 3: find the associated value, then invoke the callback
 		if valueBeginOffset, valueType, err := NextToken(data[offset:]); err != nil {
 			return -1, err
-		} else if valueEndOffset, err := callback(key, data[offset+valueBeginOffset:], valueType); err != nil { // Invoke the callback here!
+		} else if valueEndOffset, err := callback(key, data[offset+valueBeginOffset:], valueType, offset+valueBeginOffset); err != nil { // Invoke the callback here!
 			return -1, err
 		} else {
 			offset += valueEndOffset + valueBeginOffset
