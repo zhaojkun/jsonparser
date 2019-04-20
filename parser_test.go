@@ -2,6 +2,7 @@ package jsonparser
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	_ "fmt"
 	"reflect"
@@ -14,7 +15,7 @@ var activeTest = ""
 func toArray(data []byte) (result [][]byte) {
 	ArrayEach(data, func(value []byte, dataType ValueType, offset int, err error) (int, error) {
 		result = append(result, value)
-		return 0, nil
+		return defaultArrayEachFn(data)
 	})
 
 	return
@@ -22,10 +23,13 @@ func toArray(data []byte) (result [][]byte) {
 
 func toStringArray(data []byte) (result []string) {
 	ArrayEach(data, func(value []byte, dataType ValueType, offset int, err error) (int, error) {
-		result = append(result, string(value))
-		return 0, nil
+		endValueOffset := FindEndOffset(value)
+		if endValueOffset == -1 {
+			return -1, errors.New("array item error")
+		}
+		result = append(result, string(value[:endValueOffset]))
+		return endValueOffset, nil
 	})
-
 	return
 }
 
@@ -386,6 +390,14 @@ var setTests = []SetTest{
 }
 
 var getTests = []GetTest{
+	// test debug
+	{
+		desc:    "get string from array",
+		json:    `{"a":[{"b":1},"foo", 3],"c":{"c":[1,2]}}`,
+		path:    []string{"a", "[1]"},
+		isFound: true,
+		data:    "foo",
+	},
 	// Trivial tests
 	{
 		desc:    "read string",
@@ -1195,7 +1207,7 @@ func TestGetBoolean(t *testing.T) {
 }
 
 func TestGetSlice(t *testing.T) {
-	runGetTests(t, "Get()-for-arrays", getArrayTests,
+	runGetTests(t, "Get()-for-arrays", getArrayTests[:1],
 		func(test GetTest) (value interface{}, dataType ValueType, err error) {
 			value, dataType, _, err = Get([]byte(test.json), test.path...)
 			return
@@ -1213,7 +1225,8 @@ func TestArrayEach(t *testing.T) {
 
 	ArrayEach(mock, func(value []byte, dataType ValueType, offset int, err error) (int, error) {
 		count++
-
+		valueEndOffset := FindEndOffset(value)
+		value = mock[offset : offset+valueEndOffset]
 		switch count {
 		case 1:
 			if string(value) != `{"x": 1}` {
@@ -1234,14 +1247,14 @@ func TestArrayEach(t *testing.T) {
 		default:
 			t.Errorf("Should process only 4 items")
 		}
-		return 0, nil
+		return valueEndOffset, nil
 	}, "a", "b")
 }
 
 func TestArrayEachEmpty(t *testing.T) {
-	funcError := func([]byte, ValueType, int, error) (int, error) {
+	funcError := func(value []byte, dataType ValueType, offset int, err error) (int, error) {
 		t.Errorf("Run func not allow")
-		return 0, nil
+		return defaultArrayEachFn(value)
 	}
 
 	type args struct {

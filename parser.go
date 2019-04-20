@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"strconv"
 )
@@ -304,20 +303,16 @@ func searchKeys(data []byte, keys ...string) int {
 				var curIdx int
 				var valueFound []byte
 				var valueOffset int
-				var curI = i
 				ArrayEach(data[i:], func(value []byte, dataType ValueType, offset int, err error) (int, error) {
+
 					if curIdx == aIdx {
 						valueFound = value
 						valueOffset = offset
-						if dataType == String {
-							valueOffset = valueOffset - 2
-							valueFound = data[curI+valueOffset : curI+valueOffset+len(value)+2]
-						}
 					}
 					curIdx += 1
-					return 0, nil
+					valueEndOffset := FindEndOffset(value)
+					return valueEndOffset, nil
 				})
-				log.Println("after array each", string(data[i+valueOffset:]))
 				if valueFound == nil {
 					return -1
 				} else {
@@ -520,7 +515,8 @@ func EachKey(data []byte, cb func(int, []byte, ValueType, error), paths ...[]str
 					}
 
 					curIdx += 1
-					return 0, nil
+					endOffset := FindEndOffset(value)
+					return endOffset, nil
 				})
 
 				if pathsMatched == len(paths) {
@@ -876,8 +872,8 @@ func Get(data []byte, keys ...string) (value []byte, dataType ValueType, offset 
 
 func NextToken(data []byte) (offset int, dataType ValueType, err error) {
 	// Go to closest value
-	nO := nextToken(data[offset:])
-	if nO == -1 {
+	offset = nextToken(data)
+	if offset == -1 {
 		return -1, NotExist, MalformedJsonError
 	}
 	switch data[offset] {
@@ -898,21 +894,56 @@ func NextToken(data []byte) (offset int, dataType ValueType, err error) {
 	}
 }
 
+func defaultArrayEachFn(data []byte) (int, error) {
+	offset := FindEndOffset(data)
+	if offset != -1 {
+		return offset, nil
+	}
+	return -1, errors.New("array error")
+}
+
 func FindEndOffset(data []byte) int {
-	switch data[0] {
+	offset := nextToken(data)
+	if offset == -1 {
+		return -1
+	}
+	switch data[offset] {
 	case '"':
-		if idx, _ := stringEnd(data[1:]); idx != -1 {
-			return idx + 1
+		if idx, _ := stringEnd(data[offset+1:]); idx != -1 {
+			return idx + 1 + offset
 		} else {
 			return -1
 		}
 	case '[':
-		return blockEnd(data, '[', ']')
+		if idx := blockEnd(data[offset:], '[', ']'); idx != -1 {
+			return idx + offset
+		}
+		return -1
 	case '{':
-		return blockEnd(data, '{', '}')
+		if idx := blockEnd(data[offset:], '{', '}'); idx != -1 {
+			return idx + offset
+		}
+		return -1
 	default:
-		return tokenEnd(data)
+		if idx := tokenEnd(data[offset:]); idx != -1 {
+			return idx + offset
+		}
+		return -1
 	}
+}
+
+func unparsedGet(data []byte, keys ...string) (value []byte, dataType ValueType, offset int, err error) {
+	if len(keys) > 0 {
+		if offset = searchKeys(data, keys...); offset == -1 {
+			return nil, NotExist, -1, KeyPathNotFoundError
+		}
+	}
+	offset, dataType, err = NextToken(data[offset:])
+	if err != nil {
+		return
+	}
+	value = data[offset:]
+	return
 }
 
 func internalGet(data []byte, keys ...string) (value []byte, dataType ValueType, offset, endOffset int, err error) {
@@ -981,18 +1012,20 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int
 	}
 
 	for true {
-		v, t, o, e := Get(data[offset:])
-
+		v, t, o, e := unparsedGet(data[offset:])
 		if e != nil {
 			return offset, e
 		}
 
-		if o == 0 {
+		if o == -1 {
 			break
 		}
-
 		if t != NotExist {
-			cb(v, t, offset+o-len(v), e)
+			valueEndOffset, err := cb(v, t, offset+o, e)
+			if err != nil {
+				return offset, err
+			}
+			o += valueEndOffset
 		}
 
 		if e != nil {
