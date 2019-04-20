@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	_ "fmt"
+	"log"
 	"reflect"
 	"testing"
 )
@@ -1268,12 +1269,12 @@ func TestArrayEachEmpty(t *testing.T) {
 		wantOffset int
 		wantErr    bool
 	}{
-		{"Empty array", args{[]byte("[]"), funcError, []string{}}, 1, false},
-		{"Empty array with space", args{[]byte("[ ]"), funcError, []string{}}, 2, false},
-		{"Empty array with \n", args{[]byte("[\n]"), funcError, []string{}}, 2, false},
-		{"Empty field array", args{[]byte("{\"data\": []}"), funcError, []string{"data"}}, 10, false},
-		{"Empty field array with space", args{[]byte("{\"data\": [ ]}"), funcError, []string{"data"}}, 11, false},
-		{"Empty field array with \n", args{[]byte("{\"data\": [\n]}"), funcError, []string{"data"}}, 11, false},
+		{"Empty array", args{[]byte("[]"), funcError, []string{}}, 2, false},
+		{"Empty array with space", args{[]byte("[ ]"), funcError, []string{}}, 3, false},
+		{"Empty array with \n", args{[]byte("[\n]"), funcError, []string{}}, 3, false},
+		{"Empty field array", args{[]byte("{\"data\": []}"), funcError, []string{"data"}}, 11, false},
+		{"Empty field array with space", args{[]byte("{\"data\": [ ]}"), funcError, []string{"data"}}, 12, false},
+		{"Empty field array with \n", args{[]byte("{\"data\": [\n]}"), funcError, []string{"data"}}, 12, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1703,4 +1704,8 @@ func TestParseString(t *testing.T) {
 			return obtained.(string) == expected, expected
 		},
 	)
+}
+
+func TestFindEnd(t *testing.T) {
+	log.Println(FindEndOffset([]byte(`{}`)))
 }

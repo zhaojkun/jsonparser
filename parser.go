@@ -1009,7 +1009,7 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int
 	offset += nO
 
 	if data[offset] == ']' {
-		return offset, nil
+		return offset + 1, nil
 	}
 
 	for true {
@@ -1125,16 +1125,14 @@ func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType Va
 		} else {
 			offset++
 		}
-
 		// Step 3: find the associated value, then invoke the callback
 		if valueBeginOffset, valueType, err := NextToken(data[offset:]); err != nil {
 			return -1, err
 		} else if valueEndOffset, err := callback(key, data[offset+valueBeginOffset:], valueType); err != nil { // Invoke the callback here!
 			return -1, err
 		} else {
-			offset += valueEndOffset
+			offset += valueEndOffset + valueBeginOffset
 		}
-
 		// Step 4: skip over the next comma to the following token, or stop if we hit the ending brace
 		if off := nextToken(data[offset:]); off == -1 {
 			return -1, MalformedArrayError
