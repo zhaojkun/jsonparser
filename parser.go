@@ -578,9 +578,10 @@ func (vt ValueType) String() string {
 }
 
 var (
-	trueLiteral  = []byte("true")
-	falseLiteral = []byte("false")
-	nullLiteral  = []byte("null")
+	trueLiteral      = []byte("true")
+	falseLiteral     = []byte("false")
+	nullLiteral      = []byte("null")
+	undefinedLiteral = []byte("undefined")
 )
 
 func createInsertComponent(keys []string, setValue []byte, comma, object bool) []byte {
@@ -932,7 +933,7 @@ func FindEndOffset(data []byte) int {
 	}
 }
 
-func unparsedGet(data []byte, keys ...string) (value []byte, dataType ValueType, offset int, err error) {
+func UnparsedGet(data []byte, keys ...string) (value []byte, dataType ValueType, offset int, err error) {
 	if len(keys) > 0 {
 		if offset = searchKeys(data, keys...); offset == -1 {
 			return nil, NotExist, -1, KeyPathNotFoundError
@@ -1012,7 +1013,7 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int
 	}
 
 	for true {
-		v, t, o, e := unparsedGet(data[offset:])
+		v, t, o, e := UnparsedGet(data[offset:])
 		if e != nil {
 			return offset, e
 		}
@@ -1055,14 +1056,13 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int
 }
 
 // ObjectEach iterates over the key-value pairs of a JSON object, invoking a given callback for each such entry
-func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType ValueType) (int, error), keys ...string) (err error) {
+func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType ValueType) (int, error), keys ...string) (offset int, err error) {
 	var stackbuf [unescapeStackBufSize]byte // stack-allocated array for allocation-free unescaping of small strings
-	offset := 0
 
 	// Descend to the desired key, if requested
 	if len(keys) > 0 {
 		if off := searchKeys(data, keys...); off == -1 {
-			return KeyPathNotFoundError
+			return -1, KeyPathNotFoundError
 		} else {
 			offset = off
 		}
@@ -1070,18 +1070,18 @@ func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType Va
 
 	// Validate and skip past opening brace
 	if off := nextToken(data[offset:]); off == -1 {
-		return MalformedObjectError
+		return -1, MalformedObjectError
 	} else if offset += off; data[offset] != '{' {
-		return MalformedObjectError
+		return -1, MalformedObjectError
 	} else {
 		offset++
 	}
 
 	// Skip to the first token inside the object, or stop if we find the ending brace
 	if off := nextToken(data[offset:]); off == -1 {
-		return MalformedJsonError
+		return -1, MalformedJsonError
 	} else if offset += off; data[offset] == '}' {
-		return nil
+		return -1, nil
 	}
 
 	// Loop pre-condition: data[offset] points to what should be either the next entry's key, or the closing brace (if it's anything else, the JSON is malformed)
@@ -1094,15 +1094,15 @@ func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType Va
 		case '"':
 			offset++ // accept as string and skip opening quote
 		case '}':
-			return nil // we found the end of the object; stop and return success
+			return offset, nil // we found the end of the object; stop and return success
 		default:
-			return MalformedObjectError
+			return -1, MalformedObjectError
 		}
 
 		// Find the end of the key string
 		var keyEscaped bool
 		if off, esc := stringEnd(data[offset:]); off == -1 {
-			return MalformedJsonError
+			return -1, MalformedJsonError
 		} else {
 			key, keyEscaped = data[offset:offset+off-1], esc
 			offset += off
@@ -1111,7 +1111,7 @@ func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType Va
 		// Unescape the string if needed
 		if keyEscaped {
 			if keyUnescaped, err := Unescape(key, stackbuf[:]); err != nil {
-				return MalformedStringEscapeError
+				return -1, MalformedStringEscapeError
 			} else {
 				key = keyUnescaped
 			}
@@ -1119,46 +1119,46 @@ func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType Va
 
 		// Step 2: skip the colon
 		if off := nextToken(data[offset:]); off == -1 {
-			return MalformedJsonError
+			return -1, MalformedJsonError
 		} else if offset += off; data[offset] != ':' {
-			return MalformedJsonError
+			return -1, MalformedJsonError
 		} else {
 			offset++
 		}
 
 		// Step 3: find the associated value, then invoke the callback
 		if valueBeginOffset, valueType, err := NextToken(data[offset:]); err != nil {
-			return err
+			return -1, err
 		} else if valueEndOffset, err := callback(key, data[offset+valueBeginOffset:], valueType); err != nil { // Invoke the callback here!
-			return err
+			return -1, err
 		} else {
 			offset += valueEndOffset
 		}
 
 		// Step 4: skip over the next comma to the following token, or stop if we hit the ending brace
 		if off := nextToken(data[offset:]); off == -1 {
-			return MalformedArrayError
+			return -1, MalformedArrayError
 		} else {
 			offset += off
 			switch data[offset] {
 			case '}':
-				return nil // Stop if we hit the close brace
+				return offset, nil // Stop if we hit the close brace
 			case ',':
 				offset++ // Ignore the comma
 			default:
-				return MalformedObjectError
+				return -1, MalformedObjectError
 			}
 		}
 
 		// Skip to the next token after the comma
 		if off := nextToken(data[offset:]); off == -1 {
-			return MalformedArrayError
+			return -1, MalformedArrayError
 		} else {
 			offset += off
 		}
 	}
 
-	return MalformedObjectError // we shouldn't get here; it's expected that we will return via finding the ending brace
+	return -1, MalformedObjectError // we shouldn't get here; it's expected that we will return via finding the ending brace
 }
 
 // GetUnsafeString returns the value retrieved by `Get`, use creates string without memory allocation by mapping string to slice memory. It does not handle escape symbols.

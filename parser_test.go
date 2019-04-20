@@ -1412,7 +1412,7 @@ func TestObjectEach(t *testing.T) {
 
 		// Execute ObjectEach and capture all of the entries visited, in order
 		var entries []keyValueEntry
-		err := ObjectEach([]byte(test.json), func(key, value []byte, valueType ValueType) (int, error) {
+		_, err := ObjectEach([]byte(test.json), func(key, value []byte, valueType ValueType) (int, error) {
 			endOffset := FindEndOffset(value)
 			entries = append(entries, keyValueEntry{
 				key:       string(key),
