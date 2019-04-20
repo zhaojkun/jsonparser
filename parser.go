@@ -523,7 +523,7 @@ func EachKey(data []byte, cb func(int, []byte, ValueType, error), paths ...[]str
 					return i
 				}
 
-				i += arrOff - 1
+				i += arrOff - 2
 			} else {
 				// Do not search for keys inside arrays
 				if arraySkip := blockEnd(data[i:], '[', ']'); arraySkip == -1 {
@@ -1030,7 +1030,7 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int
 		}
 
 		if e != nil {
-			break
+			return offset, e
 		}
 
 		offset += o
@@ -1052,7 +1052,7 @@ func ArrayEach(data []byte, cb func(value []byte, dataType ValueType, offset int
 		offset++
 	}
 
-	return offset, nil
+	return offset + 1, nil
 }
 
 // ObjectEach iterates over the key-value pairs of a JSON object, invoking a given callback for each such entry
@@ -1094,7 +1094,7 @@ func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType Va
 		case '"':
 			offset++ // accept as string and skip opening quote
 		case '}':
-			return offset, nil // we found the end of the object; stop and return success
+			return offset + 1, nil // we found the end of the object; stop and return success
 		default:
 			return -1, MalformedObjectError
 		}
@@ -1142,7 +1142,7 @@ func ObjectEach(data []byte, callback func(key []byte, value []byte, dataType Va
 			offset += off
 			switch data[offset] {
 			case '}':
-				return offset, nil // Stop if we hit the close brace
+				return offset + 1, nil // Stop if we hit the close brace
 			case ',':
 				offset++ // Ignore the comma
 			default:
